@@ -1,0 +1,42 @@
+# === Flask & Realtime Server ===
+flask==2.3.3
+flask-socketio==5.3.6
+flask-cors==4.0.0
+python-dotenv==1.0.1
+eventlet==0.33.3
+Werkzeug==2.3.7
+simple-websocket==1.0.0
+greenlet==2.0.2
+
+# === Core AI / OpenAI / LangChain ===
+openai==1.109.1
+langchain-core==1.0.1
+langchain-openai==1.0.1
+langsmith==0.4.38
+tenacity==9.1.2
+zstandard==0.25.0
+packaging==24.2
+pyyaml==6.0.2
+
+# === Data Handling / Utilities ===
+pandas==2.2.2
+tqdm==4.66.5
+regex==2024.9.11
+requests==2.32.3
+urllib3==2.2.2
+certifi==2024.8.30
+fsspec==2024.5.0
+pyarrow==17.0.0
+xxhash==3.5.0
+
+# === Audio & Speech (TTS/STT Support) ===
+pydub==0.25.1
+ffmpeg-downloader==0.3.0
+
+# === Optional Tools (safe to keep) ===
+datasets==2.20.0
+anyio==4.11.0
+httpx==0.28.1
+distro==1.9.0
+typing-extensions==4.12.2
+colorama==0.4.6
