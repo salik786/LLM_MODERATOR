@@ -23,6 +23,36 @@ const DEBUG = (...args) => {
   console.log(`%c[CHATROOM DEBUG] ${timestamp}`, "color:#0088ff;", ...args);
 };
 
+// ============================================================
+// 🎨 USER COLOR ASSIGNMENT
+// ============================================================
+const USER_COLORS = [
+  { bg: "bg-blue-200", border: "border-blue-400", text: "text-blue-800", avatar: "border-blue-400" },
+  { bg: "bg-green-200", border: "border-green-400", text: "text-green-800", avatar: "border-green-400" },
+  { bg: "bg-purple-200", border: "border-purple-400", text: "text-purple-800", avatar: "border-purple-400" },
+  { bg: "bg-pink-200", border: "border-pink-400", text: "text-pink-800", avatar: "border-pink-400" },
+  { bg: "bg-indigo-200", border: "border-indigo-400", text: "text-indigo-800", avatar: "border-indigo-400" },
+  { bg: "bg-teal-200", border: "border-teal-400", text: "text-teal-800", avatar: "border-teal-400" },
+  { bg: "bg-orange-200", border: "border-orange-400", text: "text-orange-800", avatar: "border-orange-400" },
+  { bg: "bg-cyan-200", border: "border-cyan-400", text: "text-cyan-800", avatar: "border-cyan-400" },
+];
+
+// Simple hash function to assign consistent colors to users
+const getUserColor = (userName, currentUserName) => {
+  // Current user always gets first color (blue)
+  if (userName === currentUserName) {
+    return USER_COLORS[0];
+  }
+
+  // Hash the username to get consistent color
+  let hash = 0;
+  for (let i = 0; i < userName.length; i++) {
+    hash = userName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % USER_COLORS.length;
+  return USER_COLORS[index];
+};
+
 export default function ChatRoom() {
   const { roomId } = useParams();
   const location = useLocation();
@@ -458,11 +488,12 @@ export default function ChatRoom() {
           const isMod = m.sender === "Moderator";
           const isMe = m.sender === userName;
 
+          // Get user color scheme
+          const userColor = !isMod ? getUserColor(m.sender, userName) : null;
+
           const bg = isMod
             ? "bg-yellow-100 border border-yellow-300"
-            : isMe
-            ? "bg-blue-200"
-            : "bg-gray-200";
+            : `${userColor.bg} border ${userColor.border}`;
 
           const justify = isMod
             ? "justify-center"
@@ -475,8 +506,8 @@ export default function ChatRoom() {
               <div className={`flex items-start gap-2 ${justify}`}>
                 {!isMe && !isMod && (
                   <img
-                    src="https://api.dicebear.com/7.x/thumbs/png?seed=a"
-                    className="w-7 h-7 rounded-full border border-gray-300"
+                    src={`https://api.dicebear.com/7.x/thumbs/png?seed=${m.sender}`}
+                    className={`w-7 h-7 rounded-full border ${userColor.avatar}`}
                   />
                 )}
 
@@ -508,19 +539,19 @@ export default function ChatRoom() {
 
                 {isMe && !isMod && (
                   <img
-                    src="https://api.dicebear.com/7.x/thumbs/png?seed=b"
-                    className="w-7 h-7 rounded-full border border-blue-400"
+                    src={`https://api.dicebear.com/7.x/thumbs/png?seed=${userName}`}
+                    className={`w-7 h-7 rounded-full border ${userColor.avatar}`}
                   />
                 )}
               </div>
 
               <div
-                className={`text-[10px] mt-1 text-gray-600 font-semibold ${
+                className={`text-[10px] mt-1 font-semibold ${
                   isMe
-                    ? "text-right pr-8"
+                    ? `text-right pr-8 ${userColor.text}`
                     : isMod
-                    ? "text-center"
-                    : "text-left pl-8"
+                    ? "text-center text-yellow-700"
+                    : `text-left pl-8 ${userColor.text}`
                 }`}
               >
                 {m.sender}
