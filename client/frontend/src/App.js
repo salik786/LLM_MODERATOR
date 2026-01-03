@@ -6,12 +6,14 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import RoomCreation from './components/RoomCreation';
 import ChatRoom from './components/ChatRoom';
 import FeedbackPage from './components/FeedbackPage';
+import AutoJoin from './components/AutoJoin';
 
 export default function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<RoomCreation />} />
+        <Route path="/join/:mode" element={<AutoJoin />} />
         <Route path="/chat/:roomId" element={<ChatRoom />} />
         <Route path="/feedback" element={<FeedbackPage />} />
       </Routes>
