@@ -1,38 +1,26 @@
 # ============================================================
-# 📦 data_retriever.py — Unified Story Loader (v5.0)
+# 📦 data_retriever.py — Local Story Loader
 # ============================================================
 from __future__ import annotations
 import os
 import json
+import random
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger("moderator-data")
 
 # ============================================================
-# 🆕 ADDITION — Force new story flag
+# 📘 Story File Cache Directory
 # ============================================================
-# True  → always build a new story (no repetition)
-# False → allow cached story reuse
-FORCE_NEW_STORY = True
-
-# ============================================================
-# 🔍 Try Import: GPT Story Constructor (if available)
-# ============================================================
-_STORY_CONSTRUCTOR = None
-
-try:
-    from story_constructor import build_story_block
-    _STORY_CONSTRUCTOR = build_story_block
-    logger.info("[Story] GPT story_constructor detected and will be used.")
-except Exception as e:
-    logger.warning(f"[Story] story_constructor not found, will use fallback. {e}")
-    _STORY_CONSTRUCTOR = None
+STORY_CACHE_DIR = os.path.join(os.getcwd(), "stories")
+os.makedirs(STORY_CACHE_DIR, exist_ok=True)
 
 # ============================================================
 # 🧩 Fallback Story
 # ============================================================
 _FALLBACK = {
+    "story_id": "fallback-lantern",
     "story_name": "The Lantern and the Little Dragon",
     "context": (
         "On the edge of a misty village, a paper lantern flickered to life each dusk. "
@@ -59,85 +47,92 @@ _FALLBACK = {
 }
 
 # ============================================================
-# 📘 Story File Cache Directory
+# 📂 Load Random Story from Local Files
 # ============================================================
-STORY_CACHE_DIR = os.path.join(os.getcwd(), "stories")
-os.makedirs(STORY_CACHE_DIR, exist_ok=True)
+def get_data(story_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Load a story from local JSON files.
 
-# ============================================================
-# 📜 Save Story Block Locally
-# ============================================================
-def save_story_to_file(story: Dict[str, Any]) -> str:
-    try:
-        name = story.get("story_name", "UnknownStory").replace(" ", "_")
-        file_path = os.path.join(STORY_CACHE_DIR, f"{name}.json")
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(story, f, ensure_ascii=False, indent=2)
-        logger.info(f"[Story] Saved new story → {file_path}")
-        return file_path
-    except Exception as e:
-        logger.error(f"[Story] Could not save story: {e}")
-        return ""
+    Args:
+        story_id: Optional specific story ID to load. If None, loads random story.
 
-# ============================================================
-# 📂 Load Cached Story
-# ============================================================
-def load_cached_story() -> Dict[str, Any] | None:
+    Returns:
+        Story dict with story_id, story_name, sentences, etc.
+    """
     try:
+        # Get all JSON files in stories directory
         files = [f for f in os.listdir(STORY_CACHE_DIR) if f.endswith(".json")]
+
         if not files:
-            return None
-        files.sort(
-            key=lambda x: os.path.getmtime(os.path.join(STORY_CACHE_DIR, x)),
-            reverse=True
-        )
-        latest_file = os.path.join(STORY_CACHE_DIR, files[0])
-        with open(latest_file, "r", encoding="utf-8") as f:
-            story = json.load(f)
-        logger.info(f"[Story] Loaded cached story → {latest_file}")
+            logger.warning("[Story] No cached stories found, using fallback")
+            return dict(_FALLBACK)
+
+        # If specific story requested, try to find it
+        if story_id:
+            matching_file = None
+            for f in files:
+                file_path = os.path.join(STORY_CACHE_DIR, f)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as fp:
+                        story = json.load(fp)
+                        if story.get("story_id") == story_id or f.replace(".json", "") == story_id:
+                            matching_file = file_path
+                            break
+                except:
+                    continue
+
+            if matching_file:
+                with open(matching_file, "r", encoding="utf-8") as fp:
+                    story = json.load(fp)
+                logger.info(f"[Story] Loaded specific story: {story.get('story_id', story.get('story_name'))}")
+                return story
+            else:
+                logger.warning(f"[Story] Story {story_id} not found, loading random")
+
+        # Load random story
+        random_file = random.choice(files)
+        file_path = os.path.join(STORY_CACHE_DIR, random_file)
+
+        with open(file_path, "r", encoding="utf-8") as fp:
+            story = json.load(fp)
+
+        # Ensure story_id exists
+        if "story_id" not in story:
+            story["story_id"] = random_file.replace(".json", "")
+
+        logger.info(f"[Story] Loaded random story: {story.get('story_id', story.get('story_name'))} from {random_file}")
         return story
+
     except Exception as e:
-        logger.warning(f"[Story] Could not load cached story: {e}")
-        return None
-
-# ============================================================
-# 🎭 Main Entry — Get Story Block
-# ============================================================
-def get_data() -> Dict[str, Any]:
-
-    # ========================================================
-    # 🆕 ADDITION — optionally bypass cache
-    # ========================================================
-    if not FORCE_NEW_STORY:
-        cached = load_cached_story()
-        if cached:
-            return cached
-
-    if _STORY_CONSTRUCTOR:
-        try:
-            story_block = _STORY_CONSTRUCTOR()
-            save_story_to_file(story_block)
-            return story_block
-        except Exception as e:
-            logger.error(f"[Story] GPT constructor failed: {e}")
-
-    logger.warning("[Story] Using fallback story.")
-    save_story_to_file(_FALLBACK)
-    return dict(_FALLBACK)
+        logger.error(f"[Story] Error loading story: {e}", exc_info=True)
+        logger.warning("[Story] Using fallback story")
+        return dict(_FALLBACK)
 
 # ============================================================
 # 🪄 Generate Story Intro
 # ============================================================
 def get_story_intro(story_block: dict) -> str:
-    text = story_block.get("story_text", "").strip()
-    if not text:
-        return "Let’s begin our story."
-    return text.split(".")[0].strip() + "."
+    """Generate introduction text from story block"""
+    story_name = story_block.get("story_name", "our story")
+    context = story_block.get("context", "").strip()
+
+    if context:
+        # Use first sentence of context
+        first_sentence = context.split(".")[0].strip() + "."
+        return f"Welcome to '{story_name}'. {first_sentence}"
+
+    story_text = story_block.get("story_text", "").strip()
+    if story_text:
+        first_sentence = story_text.split(".")[0].strip() + "."
+        return f"Let's begin '{story_name}'. {first_sentence}"
+
+    return f"Let's begin our story: {story_name}."
 
 # ============================================================
 # 🧱 Format Story Block (for debug)
 # ============================================================
 def format_story_block(story_block: dict, full: bool = False) -> str:
+    """Format story block for display"""
     name = story_block.get("story_name", "Unknown Story")
     story_text = story_block.get("story_text", "")
     context = story_block.get("context", "")
@@ -153,3 +148,15 @@ def format_story_block(story_block: dict, full: bool = False) -> str:
         f"Sentences ({len(sentences)}):\n"
         + "\n".join(f"- {s}" for s in sentences)
     )
+
+# ============================================================
+# 📋 List Available Stories
+# ============================================================
+def list_available_stories() -> list[str]:
+    """List all available story IDs"""
+    try:
+        files = [f.replace(".json", "") for f in os.listdir(STORY_CACHE_DIR) if f.endswith(".json")]
+        return sorted(files)
+    except Exception as e:
+        logger.error(f"[Story] Error listing stories: {e}")
+        return []
