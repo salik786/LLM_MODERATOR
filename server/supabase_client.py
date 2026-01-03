@@ -39,6 +39,7 @@ logger.info("✅ Supabase client initialized")
 def find_available_room(mode: str) -> Optional[Dict[str, Any]]:
     """
     Find a room with available space for the given mode.
+    Looks for rooms in 'waiting' or 'active' status with < 3 participants.
 
     Args:
         mode: 'active' or 'passive'
@@ -51,7 +52,7 @@ def find_available_room(mode: str) -> Optional[Dict[str, Any]]:
             supabase.table("rooms")
             .select("*")
             .eq("mode", mode)
-            .eq("status", "waiting")
+            .in_("status", ["waiting", "active"])  # Find rooms that are waiting OR active
             .lt("current_participants", 3)  # max_participants is 3
             .order("created_at", desc=False)
             .limit(1)
@@ -59,14 +60,15 @@ def find_available_room(mode: str) -> Optional[Dict[str, Any]]:
         )
 
         if response.data and len(response.data) > 0:
-            logger.info(f"Found available room: {response.data[0]['id']}")
-            return response.data[0]
+            room = response.data[0]
+            logger.info(f"✅ Found available room: {room['id']} (status={room['status']}, participants={room['current_participants']}/3)")
+            return room
 
-        logger.info(f"No available room found for mode: {mode}")
+        logger.info(f"ℹ️ No available room found for mode: {mode}, will create new room")
         return None
 
     except Exception as e:
-        logger.error(f"Error finding available room: {e}")
+        logger.error(f"❌ Error finding available room: {e}")
         return None
 
 
