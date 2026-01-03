@@ -297,7 +297,144 @@ Story context:
         return re.sub(r"^\s*Moderator[:\-–]?\s*", "", text)
 
     except Exception:
-        return "Take your time—your ideas are welcome whenever you’re ready."
+        return "What are your thoughts so far?"
+
+# ============================================================
+# 🎯 TWO-PHASE INTERVENTION SYSTEM
+# ============================================================
+
+def generate_engagement_response(
+    participants: List[str],
+    chat_history: List[Dict[str, Any]],
+    story_context: str,
+    current_progress: int,
+) -> str:
+    """
+    Generate an engagement response (question, clarification, discussion prompt)
+    WITHOUT advancing the story.
+    """
+    try:
+        trimmed_history = chat_history[-CHAT_HISTORY_LIMIT:]
+        names = ", ".join(participants) if participants else "everyone"
+
+        # Format chat history
+        chat_text = ""
+        for msg in trimmed_history[-10:]:  # Last 10 messages
+            chat_text += f"{msg['sender']}: {msg['message']}\n"
+
+        prompt = f"""
+You are an intelligent classroom moderator for a story-based learning session.
+
+CURRENT SITUATION:
+Students have been silent or seem confused. You need to ENGAGE them, NOT advance the story.
+
+Story so far:
+{story_context}
+
+Recent conversation:
+{chat_text}
+
+Participants: {names}
+
+YOUR TASK:
+Analyze the recent conversation and generate ONE of the following:
+
+1. If students asked questions → Answer them clearly and ask a follow-up
+2. If students seem confused → Ask a clarifying question about what they don't understand
+3. If students are discussing → Ask a question to deepen the discussion
+4. If students are silent → Ask an open-ended question about the current part of the story
+
+RULES:
+- Do NOT advance the story
+- Do NOT say "let's continue" or "now we move on"
+- Do NOT reveal what happens next
+- Keep response to 1-2 sentences
+- Be warm and encouraging
+- Ask thought-provoking questions about what has ALREADY happened
+- Focus on comprehension, not prediction
+
+Generate your engagement response:
+"""
+
+        resp = llm.invoke([
+            SystemMessage(content="You are a Socratic classroom moderator who asks questions rather than lectures."),
+            HumanMessage(content=prompt)
+        ])
+
+        text = (resp.content or "").strip()
+        text = re.sub(r"^\s*Moderator[:\-–]?\s*", "", text)
+        text = " ".join(text.split()[:100])  # Limit length
+
+        return text or "What do you think about what we've read so far?"
+
+    except Exception as e:
+        logger.error(f"[generate_engagement_response] {e}")
+        return "What are your thoughts about the story so far?"
+
+
+def should_advance_story(
+    chat_history: List[Dict[str, Any]],
+    story_context: str,
+    time_since_last_advance: int,
+) -> bool:
+    """
+    Use AI to determine if it's appropriate to advance the story.
+    Returns True if story should advance, False if more engagement needed.
+    """
+    try:
+        trimmed_history = chat_history[-CHAT_HISTORY_LIMIT:]
+
+        # Format chat history
+        chat_text = ""
+        for msg in trimmed_history[-10:]:
+            chat_text += f"{msg['sender']}: {msg['message']}\n"
+
+        prompt = f"""
+You are an AI decision-maker for a classroom story session.
+
+Time since last story advancement: {time_since_last_advance} seconds
+
+Recent conversation:
+{chat_text}
+
+Story context (current point):
+{story_context[-200:]}...
+
+DECISION TASK:
+Determine if it's time to advance the story to the next part, or if more discussion/engagement is needed.
+
+Advance the story if:
+- Students have discussed the current part thoroughly
+- Students are asking "what happens next?"
+- Discussion has naturally concluded
+- It's been over 60 seconds with good engagement
+
+Do NOT advance if:
+- Students are confused about current events
+- Students are asking questions about what already happened
+- Discussion is still active and productive
+- Students haven't participated yet
+
+Reply with EXACTLY ONE WORD:
+- "ADVANCE" if story should move forward
+- "ENGAGE" if more discussion is needed
+
+Your decision:
+"""
+
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        decision = (resp.content or "").strip().upper()
+
+        # Check if response contains ADVANCE or ENGAGE
+        if "ADVANCE" in decision:
+            return True
+        else:
+            return False
+
+    except Exception as e:
+        logger.error(f"[should_advance_story] {e}")
+        # Default: if been a while, advance. Otherwise engage.
+        return time_since_last_advance > 60
 
 # ============================================================
 # 🧠 SEMANTIC CLASSIFIER
