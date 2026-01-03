@@ -1,15 +1,15 @@
 // =========================
 // Admin Dashboard
-// Comprehensive admin panel for managing rooms, settings, and viewing data
+// Professional admin panel with vertical navigation
 // =========================
 import React, { useState, useEffect } from 'react';
-import { MdSettings, MdPeople, MdChat, MdBarChart, MdRefresh } from 'react-icons/md';
+import { MdSettings, MdPeople, MdLink, MdDelete, MdRefresh, MdVisibility, MdContentCopy } from 'react-icons/md';
 
 const API_URL = 'http://localhost:5000';
+const FRONTEND_URL = 'http://localhost:3000';
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [stats, setStats] = useState(null);
+  const [activeTab, setActiveTab] = useState('rooms');
   const [rooms, setRooms] = useState([]);
   const [settings, setSettings] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -17,47 +17,19 @@ export default function AdminDashboard() {
 
   // Load initial data
   useEffect(() => {
-    loadStats();
     loadRooms();
     loadSettings();
   }, []);
 
-  // Auto-refresh stats and rooms every 10 seconds
+  // Auto-refresh rooms every 10 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      if (activeTab === 'dashboard' || activeTab === 'rooms') {
-        loadStats();
+      if (activeTab === 'rooms') {
         loadRooms();
       }
     }, 10000);
     return () => clearInterval(interval);
   }, [activeTab]);
-
-  const loadStats = async () => {
-    try {
-      console.log('Loading stats from:', `${API_URL}/admin/stats`);
-      const res = await fetch(`${API_URL}/admin/stats`);
-      console.log('Stats response status:', res.status);
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      }
-      const data = await res.json();
-      console.log('Stats data:', data);
-
-      // Check if response has error
-      if (data.error) {
-        console.error('Stats API error:', data.error);
-        setStats({ error: data.error });
-        return;
-      }
-
-      setStats(data);
-    } catch (err) {
-      console.error('Failed to load stats:', err);
-      setStats({ error: err.message || 'Failed to connect to server' });
-    }
-  };
 
   const loadRooms = async (status = null) => {
     try {
@@ -89,12 +61,38 @@ export default function AdminDashboard() {
         body: JSON.stringify({ value, updated_by: 'admin' })
       });
       await loadSettings();
-      alert(`✅ Setting "${key}" updated successfully`);
+      alert(`✅ Setting "${key}" updated successfully. Restart backend to apply.`);
     } catch (err) {
       console.error('Failed to update setting:', err);
       alert(`❌ Failed to update setting: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteRoom = async (roomId) => {
+    if (!window.confirm('Are you sure you want to delete this room? This cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/admin/rooms/${roomId}`, {
+        method: 'DELETE'
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to delete room');
+      }
+
+      alert('✅ Room deleted successfully');
+      await loadRooms();
+      if (selectedRoom?.room?.id === roomId) {
+        setSelectedRoom(null);
+        setActiveTab('rooms');
+      }
+    } catch (err) {
+      console.error('Failed to delete room:', err);
+      alert(`❌ Failed to delete room: ${err.message}`);
     }
   };
 
@@ -110,222 +108,177 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-indigo-600 text-white shadow-lg">
-        <div className="container mx-auto px-6 py-4">
-          <h1 className="text-3xl font-bold">LLM Moderator - Admin Panel</h1>
-          <p className="text-indigo-200 text-sm">Manage rooms, settings, and view research data</p>
+    <div className="flex h-screen bg-gray-50">
+      {/* Vertical Sidebar */}
+      <aside className="w-64 bg-white shadow-lg">
+        <div className="p-6 border-b border-gray-200">
+          <h1 className="text-xl font-bold text-gray-800">Admin Panel</h1>
+          <p className="text-xs text-gray-500 mt-1">LLM Moderator</p>
         </div>
-      </header>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white shadow">
-        <div className="container mx-auto px-6">
-          <nav className="flex space-x-4">
-            <TabButton
-              active={activeTab === 'dashboard'}
-              onClick={() => setActiveTab('dashboard')}
-              icon={<MdBarChart />}
-              label="Dashboard"
-            />
-            <TabButton
-              active={activeTab === 'rooms'}
-              onClick={() => setActiveTab('rooms')}
-              icon={<MdPeople />}
-              label="Rooms"
-            />
-            <TabButton
-              active={activeTab === 'settings'}
-              onClick={() => setActiveTab('settings')}
-              icon={<MdSettings />}
-              label="Settings"
-            />
-          </nav>
-        </div>
-      </div>
+        <nav className="p-4">
+          <NavItem
+            active={activeTab === 'links'}
+            onClick={() => setActiveTab('links')}
+            icon={<MdLink size={20} />}
+            label="Shareable Links"
+          />
+          <NavItem
+            active={activeTab === 'rooms'}
+            onClick={() => setActiveTab('rooms')}
+            icon={<MdPeople size={20} />}
+            label="Rooms"
+          />
+          <NavItem
+            active={activeTab === 'settings'}
+            onClick={() => setActiveTab('settings')}
+            icon={<MdSettings size={20} />}
+            label="Settings"
+          />
+        </nav>
+      </aside>
 
       {/* Main Content */}
-      <div className="container mx-auto px-6 py-8">
-        {activeTab === 'dashboard' && (
-          <DashboardView stats={stats} onRefresh={loadStats} />
-        )}
+      <main className="flex-1 overflow-auto">
+        <div className="p-8">
+          {activeTab === 'links' && <LinksView />}
 
-        {activeTab === 'rooms' && (
-          <RoomsView
-            rooms={rooms}
-            onViewDetails={viewRoomDetails}
-            onFilterChange={loadRooms}
-            onRefresh={loadRooms}
-          />
-        )}
+          {activeTab === 'rooms' && (
+            <RoomsView
+              rooms={rooms}
+              onViewDetails={viewRoomDetails}
+              onDeleteRoom={deleteRoom}
+              onFilterChange={loadRooms}
+              onRefresh={loadRooms}
+            />
+          )}
 
-        {activeTab === 'settings' && (
-          <SettingsView
-            settings={settings}
-            onUpdate={updateSetting}
-            loading={loading}
-          />
-        )}
+          {activeTab === 'settings' && (
+            <SettingsView
+              settings={settings}
+              onUpdate={updateSetting}
+              loading={loading}
+            />
+          )}
 
-        {activeTab === 'room-detail' && selectedRoom && (
-          <RoomDetailView
-            room={selectedRoom}
-            onBack={() => setActiveTab('rooms')}
-          />
-        )}
-      </div>
+          {activeTab === 'room-detail' && selectedRoom && (
+            <RoomDetailView
+              room={selectedRoom}
+              onBack={() => setActiveTab('rooms')}
+              onDelete={() => deleteRoom(selectedRoom.room.id)}
+            />
+          )}
+        </div>
+      </main>
     </div>
   );
 }
 
-// Tab Button Component
-function TabButton({ active, onClick, icon, label }) {
+// Vertical Nav Item Component
+function NavItem({ active, onClick, icon, label }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium transition ${
+      className={`w-full flex items-center gap-3 px-4 py-3 mb-2 rounded-lg transition-all ${
         active
-          ? 'border-indigo-600 text-indigo-600'
-          : 'border-transparent text-gray-600 hover:text-indigo-600 hover:border-gray-300'
+          ? 'bg-indigo-600 text-white shadow-md'
+          : 'text-gray-700 hover:bg-gray-100'
       }`}
     >
       {icon}
-      {label}
+      <span className="font-medium">{label}</span>
     </button>
   );
 }
 
-// Dashboard View with Stats
-function DashboardView({ stats, onRefresh }) {
-  // Check if stats is loading or has error
-  if (!stats) {
-    return <div className="text-center py-12">Loading statistics...</div>;
-  }
+// Shareable Links View
+function LinksView() {
+  const activeLink = `${FRONTEND_URL}/join/active`;
+  const passiveLink = `${FRONTEND_URL}/join/passive`;
 
-  // Check if stats has error
-  if (stats.error) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-red-600 mb-4">Error loading statistics: {stats.error}</p>
-        <button
-          onClick={onRefresh}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  // Check if stats has required structure
-  if (!stats.rooms || !stats.sessions || !stats.messages) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-yellow-600 mb-4">Invalid statistics data structure</p>
-        <button
-          onClick={onRefresh}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+  const copyToClipboard = (text, type) => {
+    navigator.clipboard.writeText(text);
+    alert(`✅ ${type} link copied to clipboard!`);
+  };
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
-        <button
-          onClick={onRefresh}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          <MdRefresh /> Refresh
-        </button>
-      </div>
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Shareable Links</h2>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <StatCard
-          title="Total Rooms"
-          value={stats.rooms.total || 0}
-          breakdown={[
-            { label: 'Active', value: stats.rooms.active || 0, color: 'green' },
-            { label: 'Waiting', value: stats.rooms.waiting || 0, color: 'yellow' },
-            { label: 'Completed', value: stats.rooms.completed || 0, color: 'gray' }
-          ]}
-        />
-        <StatCard
-          title="Total Sessions"
-          value={stats.sessions.total || 0}
-          breakdown={[
-            { label: 'Active Mode', value: stats.sessions.active_mode || 0, color: 'blue' },
-            { label: 'Passive Mode', value: stats.sessions.passive_mode || 0, color: 'purple' }
-          ]}
-        />
-        <StatCard
-          title="Total Messages"
-          value={stats.messages.total || 0}
-          breakdown={[
-            { label: 'Chat', value: stats.messages.chat || 0, color: 'blue' },
-            { label: 'Moderator', value: stats.messages.moderator || 0, color: 'indigo' }
-          ]}
-        />
-      </div>
-
-      {/* Session Averages */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold mb-4">Session Averages</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <p className="text-sm text-gray-600">Avg Participants</p>
-            <p className="text-2xl font-bold text-indigo-600">
-              {(stats.sessions.avg_participants || 0).toFixed(1)}
-            </p>
+      <div className="space-y-4">
+        {/* Active Mode Link */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-gray-800">Active Mode Link</h3>
+            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+              Active
+            </span>
           </div>
-          <div>
-            <p className="text-sm text-gray-600">Avg Messages</p>
-            <p className="text-2xl font-bold text-indigo-600">
-              {(stats.sessions.avg_messages || 0).toFixed(1)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">Avg Duration</p>
-            <p className="text-2xl font-bold text-indigo-600">
-              {Math.round((stats.sessions.avg_duration || 0) / 60)} min
-            </p>
+          <p className="text-sm text-gray-600 mb-4">
+            Share this link with participants to auto-join Active mode rooms.
+            AI actively moderates and asks questions.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={activeLink}
+              readOnly
+              className="flex-1 px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg font-mono text-sm"
+            />
+            <button
+              onClick={() => copyToClipboard(activeLink, 'Active mode')}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <MdContentCopy /> Copy
+            </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
 
-// Stat Card Component
-function StatCard({ title, value, breakdown }) {
-  return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-sm font-medium text-gray-600 mb-2">{title}</h3>
-      <p className="text-3xl font-bold text-gray-800 mb-4">{value}</p>
-      {breakdown && (
-        <div className="space-y-1">
-          {breakdown.map((item, idx) => (
-            <div key={idx} className="flex justify-between text-sm">
-              <span className="text-gray-600">{item.label}</span>
-              <span className={`font-semibold text-${item.color}-600`}>
-                {item.value}
-              </span>
-            </div>
-          ))}
+        {/* Passive Mode Link */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-gray-800">Passive Mode Link</h3>
+            <span className="px-3 py-1 bg-purple-100 text-purple-800 text-xs font-medium rounded-full">
+              Passive
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Share this link with participants to auto-join Passive mode rooms.
+            Story progresses automatically at intervals.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={passiveLink}
+              readOnly
+              className="flex-1 px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg font-mono text-sm"
+            />
+            <button
+              onClick={() => copyToClipboard(passiveLink, 'Passive mode')}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <MdContentCopy /> Copy
+            </button>
+          </div>
         </div>
-      )}
+
+        {/* Instructions */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-6">
+          <h4 className="font-semibold text-blue-900 mb-2">How It Works</h4>
+          <ul className="text-sm text-blue-800 space-y-2">
+            <li>• Participants clicking these links are auto-assigned anonymous names (Student 1, Student 2, etc.)</li>
+            <li>• Users are automatically placed in available rooms (max 3 per room)</li>
+            <li>• When a room fills to capacity, a new room is created for the next participants</li>
+            <li>• Story starts automatically when the first user joins (configurable in Settings)</li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }
 
 // Rooms List View
-function RoomsView({ rooms, onViewDetails, onFilterChange, onRefresh }) {
+function RoomsView({ rooms, onViewDetails, onDeleteRoom, onFilterChange, onRefresh }) {
   const [filter, setFilter] = useState('all');
 
   const handleFilterChange = (newFilter) => {
@@ -341,7 +294,7 @@ function RoomsView({ rooms, onViewDetails, onFilterChange, onRefresh }) {
           <select
             value={filter}
             onChange={(e) => handleFilterChange(e.target.value)}
-            className="border border-gray-300 rounded-lg px-4 py-2"
+            className="border border-gray-300 rounded-lg px-4 py-2 bg-white"
           >
             <option value="all">All Rooms</option>
             <option value="waiting">Waiting</option>
@@ -407,12 +360,20 @@ function RoomsView({ rooms, onViewDetails, onFilterChange, onRefresh }) {
                     {new Date(room.created_at).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <button
-                      onClick={() => onViewDetails(room.id)}
-                      className="text-indigo-600 hover:text-indigo-900 flex items-center gap-1"
-                    >
-                      <MdChat /> View
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onViewDetails(room.id)}
+                        className="text-indigo-600 hover:text-indigo-900 flex items-center gap-1"
+                      >
+                        <MdVisibility /> View
+                      </button>
+                      <button
+                        onClick={() => onDeleteRoom(room.id)}
+                        className="text-red-600 hover:text-red-900 flex items-center gap-1"
+                      >
+                        <MdDelete /> Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -449,6 +410,12 @@ function SettingsView({ settings, onUpdate, loading }) {
   return (
     <div>
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Settings</h2>
+
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+        <p className="text-sm text-yellow-800">
+          ⚠️ <strong>Important:</strong> After changing settings, restart the backend server to apply changes.
+        </p>
+      </div>
 
       {Object.entries(groupedSettings).map(([category, categorySettings]) => (
         <div key={category} className="mb-8">
@@ -497,7 +464,7 @@ function SettingsView({ settings, onUpdate, loading }) {
                           <button
                             onClick={() => handleSave(setting.key)}
                             disabled={loading}
-                            className="text-green-600 hover:text-green-900"
+                            className="text-green-600 hover:text-green-900 font-medium"
                           >
                             Save
                           </button>
@@ -511,7 +478,7 @@ function SettingsView({ settings, onUpdate, loading }) {
                       ) : (
                         <button
                           onClick={() => handleEdit(setting)}
-                          className="text-indigo-600 hover:text-indigo-900"
+                          className="text-indigo-600 hover:text-indigo-900 font-medium"
                         >
                           Edit
                         </button>
@@ -529,15 +496,23 @@ function SettingsView({ settings, onUpdate, loading }) {
 }
 
 // Room Detail View
-function RoomDetailView({ room, onBack }) {
+function RoomDetailView({ room, onBack, onDelete }) {
   return (
     <div>
-      <button
-        onClick={onBack}
-        className="mb-4 text-indigo-600 hover:text-indigo-900"
-      >
-        ← Back to Rooms
-      </button>
+      <div className="flex justify-between items-center mb-6">
+        <button
+          onClick={onBack}
+          className="text-indigo-600 hover:text-indigo-900 font-medium"
+        >
+          ← Back to Rooms
+        </button>
+        <button
+          onClick={onDelete}
+          className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+        >
+          <MdDelete /> Delete Room
+        </button>
+      </div>
 
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-2xl font-bold mb-4">Room Details</h2>

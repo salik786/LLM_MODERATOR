@@ -177,6 +177,42 @@ def get_room_details(room_id: str):
         return jsonify({"error": str(e)}), 500
 
 
+@admin_bp.route('/rooms/<room_id>', methods=['DELETE'])
+def delete_room(room_id: str):
+    """Delete a room and all associated data"""
+    try:
+        # Check if room exists
+        room = get_room(room_id)
+        if not room:
+            return jsonify({"error": "Room not found"}), 404
+
+        # Delete associated data in order (due to foreign key constraints)
+        # 1. Delete messages
+        supabase.table('messages').delete().eq('room_id', room_id).execute()
+
+        # 2. Delete participants
+        supabase.table('participants').delete().eq('room_id', room_id).execute()
+
+        # 3. Delete sessions
+        supabase.table('sessions').delete().eq('room_id', room_id).execute()
+
+        # 4. Delete research data
+        supabase.table('research_data').delete().eq('room_id', room_id).execute()
+
+        # 5. Finally delete the room
+        supabase.table('rooms').delete().eq('id', room_id).execute()
+
+        # Log the deletion
+        log_admin_action('delete_room', 'room', room_id, {'room_mode': room.get('mode')})
+
+        logger.info(f"🗑️ Admin: Deleted room {room_id}")
+        return jsonify({"success": True, "message": "Room deleted successfully"})
+
+    except Exception as e:
+        logger.error(f"❌ Error deleting room: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @admin_bp.route('/rooms/<room_id>/messages', methods=['GET'])
 def get_room_messages(room_id: str):
     """Get messages for a specific room (for live monitoring)"""
