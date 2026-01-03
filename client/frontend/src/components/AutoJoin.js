@@ -28,10 +28,8 @@ export default function AutoJoin() {
         // Generate anonymous name
         const userName = `Student ${Math.floor(Math.random() * 1000)}`;
 
-        // Navigate to chat room with username
-        navigate(`/chat/${data.room_id}`, {
-          state: { userName, mode: data.mode }
-        });
+        // Navigate to chat room with username as URL parameter
+        navigate(`/chat/${data.room_id}?userName=${encodeURIComponent(userName)}`);
 
       } catch (err) {
         console.error('Error joining room:', err);
