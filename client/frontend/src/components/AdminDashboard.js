@@ -35,11 +35,27 @@ export default function AdminDashboard() {
 
   const loadStats = async () => {
     try {
+      console.log('Loading stats from:', `${API_URL}/admin/stats`);
       const res = await fetch(`${API_URL}/admin/stats`);
+      console.log('Stats response status:', res.status);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
       const data = await res.json();
+      console.log('Stats data:', data);
+
+      // Check if response has error
+      if (data.error) {
+        console.error('Stats API error:', data.error);
+        setStats({ error: data.error });
+        return;
+      }
+
       setStats(data);
     } catch (err) {
       console.error('Failed to load stats:', err);
+      setStats({ error: err.message || 'Failed to connect to server' });
     }
   };
 
@@ -182,8 +198,39 @@ function TabButton({ active, onClick, icon, label }) {
 
 // Dashboard View with Stats
 function DashboardView({ stats, onRefresh }) {
+  // Check if stats is loading or has error
   if (!stats) {
     return <div className="text-center py-12">Loading statistics...</div>;
+  }
+
+  // Check if stats has error
+  if (stats.error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 mb-4">Error loading statistics: {stats.error}</p>
+        <button
+          onClick={onRefresh}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // Check if stats has required structure
+  if (!stats.rooms || !stats.sessions || !stats.messages) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-yellow-600 mb-4">Invalid statistics data structure</p>
+        <button
+          onClick={onRefresh}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -202,27 +249,27 @@ function DashboardView({ stats, onRefresh }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard
           title="Total Rooms"
-          value={stats.rooms.total}
+          value={stats.rooms.total || 0}
           breakdown={[
-            { label: 'Active', value: stats.rooms.active, color: 'green' },
-            { label: 'Waiting', value: stats.rooms.waiting, color: 'yellow' },
-            { label: 'Completed', value: stats.rooms.completed, color: 'gray' }
+            { label: 'Active', value: stats.rooms.active || 0, color: 'green' },
+            { label: 'Waiting', value: stats.rooms.waiting || 0, color: 'yellow' },
+            { label: 'Completed', value: stats.rooms.completed || 0, color: 'gray' }
           ]}
         />
         <StatCard
           title="Total Sessions"
-          value={stats.sessions.total}
+          value={stats.sessions.total || 0}
           breakdown={[
-            { label: 'Active Mode', value: stats.sessions.active_mode, color: 'blue' },
-            { label: 'Passive Mode', value: stats.sessions.passive_mode, color: 'purple' }
+            { label: 'Active Mode', value: stats.sessions.active_mode || 0, color: 'blue' },
+            { label: 'Passive Mode', value: stats.sessions.passive_mode || 0, color: 'purple' }
           ]}
         />
         <StatCard
           title="Total Messages"
-          value={stats.messages.total}
+          value={stats.messages.total || 0}
           breakdown={[
-            { label: 'Chat', value: stats.messages.chat, color: 'blue' },
-            { label: 'Moderator', value: stats.messages.moderator, color: 'indigo' }
+            { label: 'Chat', value: stats.messages.chat || 0, color: 'blue' },
+            { label: 'Moderator', value: stats.messages.moderator || 0, color: 'indigo' }
           ]}
         />
       </div>
@@ -234,19 +281,19 @@ function DashboardView({ stats, onRefresh }) {
           <div>
             <p className="text-sm text-gray-600">Avg Participants</p>
             <p className="text-2xl font-bold text-indigo-600">
-              {stats.sessions.avg_participants.toFixed(1)}
+              {(stats.sessions.avg_participants || 0).toFixed(1)}
             </p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Avg Messages</p>
             <p className="text-2xl font-bold text-indigo-600">
-              {stats.sessions.avg_messages.toFixed(1)}
+              {(stats.sessions.avg_messages || 0).toFixed(1)}
             </p>
           </div>
           <div>
             <p className="text-sm text-gray-600">Avg Duration</p>
             <p className="text-2xl font-bold text-indigo-600">
-              {Math.round(stats.sessions.avg_duration / 60)} min
+              {Math.round((stats.sessions.avg_duration || 0) / 60)} min
             </p>
           </div>
         </div>
