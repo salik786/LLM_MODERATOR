@@ -8,6 +8,10 @@ Werkzeug==2.3.7
 simple-websocket==1.0.0
 greenlet==2.0.2
 
+# === Database (Supabase) ===
+supabase==2.3.5
+postgrest==0.16.0
+
 # === Core AI / OpenAI / LangChain ===
 openai==1.109.1
 langchain-core==1.0.1
