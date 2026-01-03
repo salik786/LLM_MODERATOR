@@ -62,33 +62,31 @@ from prompts import (
 DEBUG_LOG_FILE = "server_debug.log"
 
 logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    level=logging.INFO,  # Changed from DEBUG to INFO for cleaner logs
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     handlers=[
-        logging.FileHandler(DEBUG_LOG_FILE, mode="w", encoding="utf-8"),
+        logging.FileHandler(DEBUG_LOG_FILE, mode="a", encoding="utf-8"),  # Append mode
         logging.StreamHandler(sys.stdout),
     ],
 )
 
-logger = logging.getLogger("SUPABASE_SERVER")
-logger.info("🚀 Server with Supabase Integration Starting")
-
-def dbg(*msg):
-    logger.debug(" ".join(str(m) for m in msg))
+logger = logging.getLogger("LLM_MODERATOR")
+logger.info("="*60)
+logger.info("🚀 LLM Moderator Server Starting")
+logger.info("="*60)
 
 # ============================================================
 # FFmpeg Configuration (for TTS/STT)
 # ============================================================
-# Note: Update this path for your system if needed
 try:
     ffmpeg_dir = r"C:\Users\shaima\AppData\Local\ffmpegio\ffmpeg-downloader\ffmpeg\bin"
     if os.path.exists(ffmpeg_dir):
         os.environ["PATH"] += os.pathsep + ffmpeg_dir
         AudioSegment.converter = os.path.join(ffmpeg_dir, "ffmpeg.exe")
         AudioSegment.ffprobe = os.path.join(ffmpeg_dir, "ffprobe.exe")
-        dbg("FFmpeg configured")
+        logger.info("✅ FFmpeg configured")
 except Exception as e:
-    logger.warning(f"FFmpeg configuration skipped: {e}")
+    logger.warning(f"⚠️ FFmpeg not configured: {e}")
 
 # ============================================================
 # App Setup
@@ -137,9 +135,12 @@ PASSIVE_INTERVENTION_WINDOW_SECONDS = int(
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+logger.info(f"📝 Config: Active Step={ACTIVE_STORY_STEP}, Passive Step={PASSIVE_STORY_STEP}")
+logger.info(f"📝 Config: Story Interval={STORY_CHUNK_INTERVAL}s")
+logger.info(f"📝 Frontend URL: {FRONTEND_URL}")
+
 # ============================================================
 # In-Memory Cache for Active Monitors
-# (Database stores persistent data, this tracks runtime state)
 # ============================================================
 active_monitors: Dict[str, threading.Thread] = {}
 room_sessions: Dict[str, str] = {}  # room_id -> session_id
@@ -148,43 +149,119 @@ room_sessions: Dict[str, str] = {}  # room_id -> session_id
 # Helper: Get Room Story Data
 # ============================================================
 def get_room_story_data(room_id: str) -> Optional[Dict[str, Any]]:
-    """Load story data for room (cached in memory per room)"""
+    """Load story data for room"""
     room = get_room(room_id)
     if not room or not room.get('story_id'):
+        logger.warning(f"⚠️ No story data for room {room_id}")
         return None
 
-    # In production, you might cache this
     return get_data(room['story_id'])
+
+# ============================================================
+# Helper: Start Story
+# ============================================================
+def start_story_for_room(room_id: str):
+    """Start story for a room when conditions are met"""
+    try:
+        room = get_room(room_id)
+        if not room:
+            logger.error(f"❌ Room {room_id} not found")
+            return
+
+        participants = get_participants(room_id)
+        student_count = len([p for p in participants if not p['is_moderator']])
+
+        logger.info(f"📊 Room {room_id}: {student_count} students, status={room['status']}")
+
+        # Check if we should start
+        if room['status'] != 'waiting':
+            logger.info(f"ℹ️ Room {room_id} already started (status={room['status']})")
+            return
+
+        if student_count < 1:  # Allow single user for testing
+            logger.info(f"ℹ️ Room {room_id} waiting for participants (current: {student_count})")
+            return
+
+        logger.info(f"🎬 Starting story for room {room_id} with {student_count} students")
+
+        # Update room status
+        update_room_status(room_id, 'active')
+        logger.info(f"✅ Room {room_id} status → active")
+
+        # Create session
+        session = create_session(
+            room_id=room_id,
+            mode=room['mode'],
+            participant_count=student_count,
+            story_id=room['story_id']
+        )
+        room_sessions[room_id] = session['id']
+        logger.info(f"✅ Session created: {session['id']}")
+
+        # Send story intro
+        story_data = get_room_story_data(room_id)
+        if story_data:
+            intro = get_story_intro(story_data)
+            logger.info(f"📖 Sending story intro to room {room_id}")
+
+            add_message(
+                room_id=room_id,
+                sender_name="Moderator",
+                message_text=intro,
+                message_type="story"
+            )
+
+            socketio.emit(
+                "receive_message",
+                {"sender": "Moderator", "message": intro},
+                room=room_id,
+            )
+
+            # Start appropriate mode
+            if room['mode'] == 'passive':
+                logger.info(f"🔄 Starting passive loop for room {room_id}")
+                start_passive_loop(room_id)
+            else:  # active mode
+                logger.info(f"👁️ Starting silence monitor for room {room_id}")
+                start_silence_monitor(room_id)
+        else:
+            logger.error(f"❌ No story data found for room {room_id}")
+
+    except Exception as e:
+        logger.error(f"❌ Error starting story for room {room_id}: {e}", exc_info=True)
 
 # ============================================================
 # Auto Room Assignment Endpoint
 # ============================================================
 @app.route("/join/<mode>")
 def auto_join_room(mode: str):
-    """
-    Auto-assign user to available room or create new one.
-    Returns room_id for frontend to use.
-    """
+    """Auto-assign user to available room or create new one"""
+    logger.info(f"🔗 /join/{mode} - Auto-join request received")
+
     if mode not in ['active', 'passive']:
+        logger.warning(f"⚠️ Invalid mode: {mode}")
         return jsonify({"error": "Invalid mode. Use 'active' or 'passive'"}), 400
 
     try:
-        # Get or create room with space
-        story_data = get_data()  # Get random story
+        # Get random story
+        story_data = get_data()
         story_id = story_data.get('story_id', 'default-story')
+        logger.info(f"📚 Selected story: {story_id}")
 
+        # Get or create room
         room = get_or_create_room(mode=mode, story_id=story_id)
+        room_id = room['id']
 
-        logger.info(f"Auto-assigned to room {room['id']} (mode: {mode})")
+        logger.info(f"✅ Room assigned: {room_id} (mode={mode}, participants={room['current_participants']})")
 
         return jsonify({
-            "room_id": room['id'],
+            "room_id": room_id,
             "mode": room['mode'],
-            "redirect_url": f"{FRONTEND_URL}/chat/{room['id']}"
+            "redirect_url": f"{FRONTEND_URL}/chat/{room_id}"
         })
 
     except Exception as e:
-        logger.error(f"Error in auto_join_room: {e}")
+        logger.error(f"❌ Error in auto_join_room: {e}", exc_info=True)
         return jsonify({"error": "Failed to assign room"}), 500
 
 # ============================================================
@@ -193,12 +270,16 @@ def auto_join_room(mode: str):
 @app.route("/api/room/<room_id>")
 def get_room_info(room_id: str):
     """Get room information"""
+    logger.info(f"ℹ️ Room info requested: {room_id}")
+
     try:
         room = get_room(room_id)
         if not room:
+            logger.warning(f"⚠️ Room not found: {room_id}")
             return jsonify({"error": "Room not found"}), 404
 
         participants = get_participants(room_id)
+        logger.info(f"✅ Room {room_id}: {len(participants)} participants")
 
         return jsonify({
             "room": room,
@@ -207,7 +288,7 @@ def get_room_info(room_id: str):
         })
 
     except Exception as e:
-        logger.error(f"Error getting room info: {e}")
+        logger.error(f"❌ Error getting room info: {e}", exc_info=True)
         return jsonify({"error": "Failed to get room info"}), 500
 
 # ============================================================
@@ -215,68 +296,76 @@ def get_room_info(room_id: str):
 # ============================================================
 def passive_continue_story(room_id: str):
     """Continue story in passive mode"""
-    room = get_room(room_id)
-    if not room or room['story_finished'] or room['mode'] != 'passive':
-        return
+    try:
+        room = get_room(room_id)
+        if not room or room['story_finished'] or room['mode'] != 'passive':
+            return
 
-    story_data = get_room_story_data(room_id)
-    if not story_data:
-        return
+        story_data = get_room_story_data(room_id)
+        if not story_data:
+            return
 
-    sentences = story_data.get("sentences", [])
-    total = len(sentences)
+        sentences = story_data.get("sentences", [])
+        total = len(sentences)
 
-    start = room['story_progress']
-    end = min(start + PASSIVE_STORY_STEP, total)
+        start = room['story_progress']
+        end = min(start + PASSIVE_STORY_STEP, total)
 
-    next_chunk = " ".join(sentences[start:end])
+        next_chunk = " ".join(sentences[start:end])
+        is_last = end >= total
 
-    is_last = end >= total
-    msg = generate_passive_chunk(next_chunk, is_last_chunk=is_last)
+        logger.info(f"📖 Passive story chunk {start}→{end}/{total} for room {room_id}")
 
-    # Store message in database
-    add_message(
-        room_id=room_id,
-        sender_name="Moderator",
-        message_text=msg,
-        message_type="story",
-        metadata={"story_progress": end, "is_last": is_last}
-    )
+        msg = generate_passive_chunk(next_chunk, is_last_chunk=is_last)
 
-    # Broadcast to room
-    socketio.emit(
-        "receive_message",
-        {"sender": "Moderator", "message": msg},
-        room=room_id,
-    )
-
-    # Update progress
-    update_story_progress(room_id, end, is_last)
-
-    if is_last:
-        ending = get_random_ending()
         add_message(
             room_id=room_id,
             sender_name="Moderator",
-            message_text=ending,
-            message_type="system"
+            message_text=msg,
+            message_type="story",
+            metadata={"story_progress": end, "is_last": is_last}
         )
+
         socketio.emit(
             "receive_message",
-            {"sender": "Moderator", "message": ending},
+            {"sender": "Moderator", "message": msg},
             room=room_id,
         )
 
-        # End session
-        end_session(room_id, metadata={"completion_type": "story_finished"})
-        update_room_status(room_id, "completed")
+        update_story_progress(room_id, end, is_last)
+
+        if is_last:
+            logger.info(f"🏁 Story finished for room {room_id}")
+            ending = get_random_ending()
+
+            add_message(
+                room_id=room_id,
+                sender_name="Moderator",
+                message_text=ending,
+                message_type="system"
+            )
+
+            socketio.emit(
+                "receive_message",
+                {"sender": "Moderator", "message": ending},
+                room=room_id,
+            )
+
+            end_session(room_id, metadata={"completion_type": "story_finished"})
+            update_room_status(room_id, "completed")
+            logger.info(f"✅ Session ended for room {room_id}")
+
+    except Exception as e:
+        logger.error(f"❌ Error in passive_continue_story: {e}", exc_info=True)
 
 def start_passive_loop(room_id: str):
     """Start background task for passive story advancement"""
     def loop():
+        logger.info(f"🔄 Passive loop started for room {room_id}")
         while True:
             room = get_room(room_id)
             if not room or room['story_finished'] or room['status'] == 'completed':
+                logger.info(f"⏹️ Passive loop stopped for room {room_id}")
                 break
 
             passive_continue_story(room_id)
@@ -289,84 +378,85 @@ def start_passive_loop(room_id: str):
 # ============================================================
 def advance_story_chunk(room_id: str):
     """Advance story in active mode"""
-    room = get_room(room_id)
-    if not room or room['story_finished']:
-        return
+    try:
+        room = get_room(room_id)
+        if not room or room['story_finished']:
+            return
 
-    story_data = get_room_story_data(room_id)
-    if not story_data:
-        return
+        story_data = get_room_story_data(room_id)
+        if not story_data:
+            return
 
-    sentences = story_data.get("sentences", [])
-    total = len(sentences)
+        sentences = story_data.get("sentences", [])
+        total = len(sentences)
 
-    start = room['story_progress']
-    end = min(start + ACTIVE_STORY_STEP, total)
-    is_last = end >= total
+        start = room['story_progress']
+        end = min(start + ACTIVE_STORY_STEP, total)
+        is_last = end >= total
 
-    context = " ".join(sentences[:end])
+        logger.info(f"📖 Active story chunk {start}→{end}/{total} for room {room_id}")
 
-    # Get participants for AI context
-    participants = get_participants(room_id)
-    student_names = [p['display_name'] for p in participants if not p['is_moderator']]
+        context = " ".join(sentences[:end])
 
-    # Get chat history
-    history = get_chat_history(room_id)
+        participants = get_participants(room_id)
+        student_names = [p['display_name'] for p in participants if not p['is_moderator']]
 
-    # Convert to format expected by prompts
-    chat_history = [
-        {"sender": msg['sender_name'], "message": msg['message_text']}
-        for msg in history
-    ]
+        history = get_chat_history(room_id)
+        chat_history = [
+            {"sender": msg['sender_name'], "message": msg['message_text']}
+            for msg in history
+        ]
 
-    # Generate AI response
-    reply = generate_moderator_reply(
-        student_names,
-        chat_history,
-        context,
-        room['story_progress'],
-        is_last_chunk=is_last,
-    )
-
-    # Store message
-    add_message(
-        room_id=room_id,
-        sender_name="Moderator",
-        message_text=reply,
-        message_type="moderator",
-        metadata={"story_progress": end, "is_last": is_last}
-    )
-
-    # Broadcast
-    socketio.emit(
-        "receive_message",
-        {"sender": "Moderator", "message": reply},
-        room=room_id,
-    )
-
-    # Update progress
-    update_story_progress(room_id, end, is_last)
-
-    if is_last:
-        ending = os.getenv(
-            "ACTIVE_ENDING_MESSAGE",
-            "✨ We have reached the end of the story."
+        reply = generate_moderator_reply(
+            student_names,
+            chat_history,
+            context,
+            room['story_progress'],
+            is_last_chunk=is_last,
         )
+
         add_message(
             room_id=room_id,
             sender_name="Moderator",
-            message_text=ending,
-            message_type="system"
+            message_text=reply,
+            message_type="moderator",
+            metadata={"story_progress": end, "is_last": is_last}
         )
+
         socketio.emit(
             "receive_message",
-            {"sender": "Moderator", "message": ending},
+            {"sender": "Moderator", "message": reply},
             room=room_id,
         )
 
-        # End session
-        end_session(room_id, metadata={"completion_type": "story_finished"})
-        update_room_status(room_id, "completed")
+        update_story_progress(room_id, end, is_last)
+
+        if is_last:
+            logger.info(f"🏁 Story finished for room {room_id}")
+            ending = os.getenv(
+                "ACTIVE_ENDING_MESSAGE",
+                "✨ We have reached the end of the story."
+            )
+
+            add_message(
+                room_id=room_id,
+                sender_name="Moderator",
+                message_text=ending,
+                message_type="system"
+            )
+
+            socketio.emit(
+                "receive_message",
+                {"sender": "Moderator", "message": ending},
+                room=room_id,
+            )
+
+            end_session(room_id, metadata={"completion_type": "story_finished"})
+            update_room_status(room_id, "completed")
+            logger.info(f"✅ Session ended for room {room_id}")
+
+    except Exception as e:
+        logger.error(f"❌ Error in advance_story_chunk: {e}", exc_info=True)
 
 # ============================================================
 # Silence Monitor (Active Mode)
@@ -374,6 +464,7 @@ def advance_story_chunk(room_id: str):
 def start_silence_monitor(room_id: str):
     """Monitor silence and trigger interventions in active mode"""
     def loop():
+        logger.info(f"👁️ Silence monitor started for room {room_id}")
         last_intervention = time.time()
 
         while True:
@@ -381,12 +472,13 @@ def start_silence_monitor(room_id: str):
 
             room = get_room(room_id)
             if not room or room['story_finished'] or room['status'] == 'completed':
+                logger.info(f"⏹️ Silence monitor stopped for room {room_id}")
                 break
 
             now = time.time()
 
-            # Check if enough time has passed since last intervention
             if now - last_intervention >= ACTIVE_INTERVENTION_WINDOW_SECONDS:
+                logger.info(f"🔔 Silence detected in room {room_id}, advancing story")
                 advance_story_chunk(room_id)
                 last_intervention = now
 
@@ -397,14 +489,23 @@ def start_silence_monitor(room_id: str):
 # ============================================================
 # Socket.IO Events
 # ============================================================
+@socketio.on("connect")
+def handle_connect():
+    logger.info(f"🔌 Client connected: {request.sid}")
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    logger.info(f"🔌 Client disconnected: {request.sid}")
+
 @socketio.on("create_room")
 def create_room_handler(data):
-    """Handle room creation (legacy - now use /join/{mode})"""
+    """Handle room creation"""
     user = data.get("user_name", "Student")
     mode = data.get("moderatorMode", "active")
 
+    logger.info(f"🏗️ Creating room: user={user}, mode={mode}, sid={request.sid}")
+
     try:
-        # Create room
         story_data = get_data()
         story_id = story_data.get('story_id', 'default-story')
 
@@ -412,17 +513,18 @@ def create_room_handler(data):
         room = create_room(mode=mode, story_id=story_id)
         room_id = room['id']
 
-        # Add creator as participant
+        logger.info(f"✅ Room created: {room_id}")
+
         participant = add_participant(
             room_id=room_id,
             display_name=user,
             socket_id=request.sid,
             is_moderator=False
         )
+        logger.info(f"✅ Participant added: {user} → room {room_id}")
 
         join_room(room_id)
 
-        # Send welcome message
         add_message(
             room_id=room_id,
             sender_name="Moderator",
@@ -438,10 +540,11 @@ def create_room_handler(data):
             room=room_id,
         )
 
-        logger.info(f"Room created: {room_id} by {user}")
+        # Try to start story
+        start_story_for_room(room_id)
 
     except Exception as e:
-        logger.error(f"Error creating room: {e}")
+        logger.error(f"❌ Error creating room: {e}", exc_info=True)
         emit("error", {"message": "Failed to create room"})
 
 @socketio.on("join_room")
@@ -450,31 +553,30 @@ def join_room_handler(data):
     room_id = data.get("room_id")
     user_name = data.get("user_name")
 
+    logger.info(f"🚪 Join room request: room={room_id}, user={user_name}, sid={request.sid}")
+
     try:
-        # Get room
         room = get_room(room_id)
         if not room:
+            logger.warning(f"⚠️ Room not found: {room_id}")
             emit("error", {"message": "Room not found"})
             return
 
-        # Generate name if not provided
         if not user_name:
             user_name = get_next_participant_name(room_id)
+            logger.info(f"📝 Auto-generated name: {user_name}")
 
-        # Add participant
         participant = add_participant(
             room_id=room_id,
             display_name=user_name,
             socket_id=request.sid,
             is_moderator=False
         )
+        logger.info(f"✅ Participant added: {user_name} → room {room_id}")
 
         join_room(room_id)
 
-        # Send chat history
         history = get_chat_history(room_id)
-
-        # Convert to format expected by frontend
         chat_history = [
             {
                 "sender": msg['sender_name'],
@@ -484,52 +586,16 @@ def join_room_handler(data):
             for msg in history
         ]
 
+        logger.info(f"📜 Sending {len(chat_history)} messages to {user_name}")
+
         emit("joined_room", {"room_id": room_id}, to=request.sid)
         emit("chat_history", {"chat_history": chat_history}, to=request.sid)
 
-        # Check if we should start the story
-        participants = get_participants(room_id)
-        student_count = len([p for p in participants if not p['is_moderator']])
-
-        if student_count >= 2 and room['status'] == 'waiting':
-            # Update room status
-            update_room_status(room_id, 'active')
-
-            # Create session
-            session = create_session(
-                room_id=room_id,
-                mode=room['mode'],
-                participant_count=student_count,
-                story_id=room['story_id']
-            )
-            room_sessions[room_id] = session['id']
-
-            # Send story intro
-            story_data = get_room_story_data(room_id)
-            if story_data:
-                intro = get_story_intro(story_data)
-                add_message(
-                    room_id=room_id,
-                    sender_name="Moderator",
-                    message_text=intro,
-                    message_type="story"
-                )
-                emit(
-                    "receive_message",
-                    {"sender": "Moderator", "message": intro},
-                    room=room_id,
-                )
-
-                # Start appropriate mode
-                if room['mode'] == 'passive':
-                    start_passive_loop(room_id)
-                else:  # active mode
-                    start_silence_monitor(room_id)
-
-        logger.info(f"User {user_name} joined room {room_id}")
+        # Try to start story
+        start_story_for_room(room_id)
 
     except Exception as e:
-        logger.error(f"Error joining room: {e}")
+        logger.error(f"❌ Error joining room: {e}", exc_info=True)
         emit("error", {"message": "Failed to join room"})
 
 @socketio.on("send_message")
@@ -542,16 +608,16 @@ def send_message_handler(data):
     if not msg:
         return
 
+    logger.info(f"💬 Message from {sender} in room {room_id}: {msg[:50]}...")
+
     try:
-        # Get room
         room = get_room(room_id)
         if not room or room['story_finished']:
+            logger.warning(f"⚠️ Cannot send message - room {room_id} finished or not found")
             return
 
-        # Get participant
         participant = get_participant_by_socket(request.sid)
 
-        # Store message
         add_message(
             room_id=room_id,
             participant_id=participant['id'] if participant else None,
@@ -560,25 +626,25 @@ def send_message_handler(data):
             message_type="chat"
         )
 
-        # Broadcast to room
         emit(
             "receive_message",
             {"sender": sender, "message": msg},
             room=room_id,
         )
 
-        logger.debug(f"Message from {sender} in room {room_id}")
+        logger.info(f"✅ Message sent to room {room_id}")
 
     except Exception as e:
-        logger.error(f"Error sending message: {e}")
+        logger.error(f"❌ Error sending message: {e}", exc_info=True)
 
 # ============================================================
-# TTS Endpoint
+# TTS & STT Endpoints
 # ============================================================
 @app.route("/tts", methods=["POST"])
 def tts():
     """Text-to-speech endpoint"""
     text = (request.json.get("text") or "").strip() or "Hello"
+    logger.info(f"🔊 TTS request: {text[:30]}...")
 
     try:
         res = client.audio.speech.create(
@@ -587,17 +653,17 @@ def tts():
             input=text,
         )
         audio = res.read()
+        logger.info(f"✅ TTS generated")
         return send_file(BytesIO(audio), mimetype="audio/mpeg")
     except Exception as e:
-        logger.error(f"TTS error: {e}")
+        logger.error(f"❌ TTS error: {e}")
         return {"error": str(e)}, 500
 
-# ============================================================
-# STT Endpoint
-# ============================================================
 @app.route("/stt", methods=["POST"])
 def stt():
     """Speech-to-text endpoint"""
+    logger.info(f"🎤 STT request")
+
     if "file" not in request.files:
         return {"error": "no file"}, 400
 
@@ -624,16 +690,20 @@ def stt():
             file=buf,
         )
 
+        logger.info(f"✅ STT result: {res.text[:50]}...")
         return {"text": res.text.strip()}
 
     except Exception as e:
-        logger.error(f"STT error: {e}")
+        logger.error(f"❌ STT error: {e}")
         return {"error": str(e)}, 500
 
 # ============================================================
 # Server Start
 # ============================================================
 if __name__ == "__main__":
-    logger.info("🚀 LLM Moderator server with Supabase starting...")
-    logger.info(f"Frontend URL: {FRONTEND_URL}")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    logger.info("="*60)
+    logger.info("🚀 Starting Flask-SocketIO server")
+    logger.info(f"📍 Host: 0.0.0.0:5000")
+    logger.info(f"🌐 Frontend: {FRONTEND_URL}")
+    logger.info("="*60)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)  # debug=False for cleaner logs
