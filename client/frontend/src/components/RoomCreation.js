@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { socket } from "../socket";
+import ShareableLinks from "./ShareableLinks";
 import {
   MdPerson,
   MdMeetingRoom,
@@ -180,11 +181,16 @@ export default function RoomCreation() {
   // 🎨 UI
   // ------------------------------------------------------------
   return (
-    <div className="h-screen w-screen flex justify-center items-center overflow-hidden bg-gradient-to-br from-green-50 via-blue-50 to-green-100">
-      <div className="bg-white/90 backdrop-blur-md p-6 rounded-2xl shadow-lg w-80 max-w-md border border-blue-100 hover:shadow-[0_0_25px_rgba(59,130,246,0.3)] transition">
-        <h1 className="text-xl font-semibold mb-6 text-center text-blue-700">
-          Create / Join Room
-        </h1>
+    <div className="min-h-screen w-screen overflow-y-auto bg-gradient-to-br from-green-50 via-blue-50 to-green-100 py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        {/* Shareable Links Section */}
+        <ShareableLinks />
+
+        {/* Original Create/Join Room Section */}
+        <div className="bg-white/90 backdrop-blur-md p-6 rounded-2xl shadow-lg max-w-md mx-auto border border-blue-100 hover:shadow-[0_0_25px_rgba(59,130,246,0.3)] transition">
+          <h1 className="text-xl font-semibold mb-6 text-center text-blue-700">
+            Or Create / Join Room Manually
+          </h1>
 
         {/* 👤 User Name */}
         <div className="relative mb-4">
@@ -312,6 +318,7 @@ export default function RoomCreation() {
           <MdLogin size={16} />
           {loading ? "Joining…" : "Join Room"}
         </button>
+        </div>
       </div>
     </div>
   );
