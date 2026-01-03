@@ -54,6 +54,8 @@ from prompts import (
     generate_passive_chunk,
     generate_gpt_nudge,
     get_random_ending,
+    generate_engagement_response,
+    should_advance_story,
 )
 
 # ============================================================
@@ -452,13 +454,72 @@ def advance_story_chunk(room_id: str):
         logger.error(f"❌ Error in advance_story_chunk: {e}", exc_info=True)
 
 # ============================================================
-# Silence Monitor (Active Mode)
+# Engagement Response (without advancing story)
+# ============================================================
+def send_engagement_response(room_id: str):
+    """Send an engagement response (question/discussion) without advancing story"""
+    try:
+        room = get_room(room_id)
+        if not room or room['story_finished']:
+            return
+
+        story_data = get_room_story_data(room_id)
+        if not story_data:
+            return
+
+        sentences = story_data.get("sentences", [])
+        current_progress = room['story_progress']
+
+        # Get story context up to current point
+        context = " ".join(sentences[:current_progress])
+
+        participants = get_participants(room_id)
+        student_names = [p['display_name'] for p in participants if not p['is_moderator']]
+
+        history = get_chat_history(room_id)
+        chat_history = [
+            {"sender": msg['sender_name'], "message": msg['message_text']}
+            for msg in history
+        ]
+
+        # Generate engagement response (question, not story advancement)
+        response = generate_engagement_response(
+            student_names,
+            chat_history,
+            context,
+            current_progress
+        )
+
+        logger.info(f"💭 Engagement response for room {room_id}: {response[:50]}...")
+
+        # Send engagement message
+        add_message(
+            room_id=room_id,
+            sender_name="Moderator",
+            message_text=response,
+            message_type="moderator",
+            metadata={"type": "engagement", "story_progress": current_progress}
+        )
+
+        socketio.emit(
+            "receive_message",
+            {"sender": "Moderator", "message": response},
+            room=room_id,
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Error in send_engagement_response: {e}", exc_info=True)
+
+
+# ============================================================
+# Silence Monitor (Active Mode) - TWO-PHASE SYSTEM
 # ============================================================
 def start_silence_monitor(room_id: str):
-    """Monitor silence and trigger interventions in active mode"""
+    """Monitor silence and trigger intelligent interventions in active mode"""
     def loop():
         logger.info(f"👁️ Silence monitor started for room {room_id}")
         last_intervention = time.time()
+        last_story_advance = time.time()
 
         while True:
             time.sleep(5)
@@ -469,10 +530,43 @@ def start_silence_monitor(room_id: str):
                 break
 
             now = time.time()
+            time_since_intervention = now - last_intervention
+            time_since_advance = now - last_story_advance
 
-            if now - last_intervention >= ACTIVE_INTERVENTION_WINDOW_SECONDS:
-                logger.info(f"🔔 Silence detected in room {room_id}, advancing story")
-                advance_story_chunk(room_id)
+            # Check if it's time to intervene (20 seconds of silence)
+            if time_since_intervention >= ACTIVE_INTERVENTION_WINDOW_SECONDS:
+                logger.info(f"🔔 Silence detected in room {room_id} ({time_since_intervention:.0f}s)")
+
+                # PHASE 1: Check if story should advance
+                history = get_chat_history(room_id)
+                chat_history = [
+                    {"sender": msg['sender_name'], "message": msg['message_text']}
+                    for msg in history
+                ]
+
+                story_data = get_room_story_data(room_id)
+                if story_data:
+                    sentences = story_data.get("sentences", [])
+                    current_progress = room['story_progress']
+                    context = " ".join(sentences[:current_progress])
+
+                    # Ask AI: should we advance or engage?
+                    should_advance = should_advance_story(
+                        chat_history,
+                        context,
+                        int(time_since_advance)
+                    )
+
+                    if should_advance:
+                        # PHASE 2A: Advance the story
+                        logger.info(f"📖 AI Decision: ADVANCE story in room {room_id}")
+                        advance_story_chunk(room_id)
+                        last_story_advance = now
+                    else:
+                        # PHASE 2B: Engage with questions/discussion
+                        logger.info(f"💬 AI Decision: ENGAGE students in room {room_id}")
+                        send_engagement_response(room_id)
+
                 last_intervention = now
 
     thread = threading.Thread(target=loop, daemon=True)
