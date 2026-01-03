@@ -7,6 +7,7 @@ import RoomCreation from './components/RoomCreation';
 import ChatRoom from './components/ChatRoom';
 import FeedbackPage from './components/FeedbackPage';
 import AutoJoin from './components/AutoJoin';
+import AdminDashboard from './components/AdminDashboard';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/join/:mode" element={<AutoJoin />} />
         <Route path="/chat/:roomId" element={<ChatRoom />} />
         <Route path="/feedback" element={<FeedbackPage />} />
+        <Route path="/admin" element={<AdminDashboard />} />
       </Routes>
     </Router>
   );

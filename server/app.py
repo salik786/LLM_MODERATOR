@@ -105,33 +105,26 @@ socketio = SocketIO(
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ============================================================
-# Configuration
+# Register Admin API Blueprint
 # ============================================================
-WELCOME_MESSAGE = os.getenv(
-    "WELCOME_MESSAGE", "Welcome everyone! I'm the Moderator."
-)
+from admin_api import admin_bp, get_setting_value
 
-ACTIVE_STORY_STEP = int(os.getenv("ACTIVE_STORY_STEP", "1"))
-PASSIVE_STORY_STEP = int(os.getenv("PASSIVE_STORY_STEP", "1"))
+app.register_blueprint(admin_bp)
+logger.info("✅ Admin API registered at /admin")
 
-PASSIVE_SILENCE_SECONDS = int(os.getenv("PASSIVE_SILENCE_SECONDS", "10"))
-ACTIVE_SILENCE_SECONDS = int(os.getenv("ACTIVE_SILENCE_SECONDS", "20"))
+# ============================================================
+# Configuration - Load from Database
+# ============================================================
+logger.info("📝 Loading configuration from database...")
 
-STORY_CHUNK_INTERVAL = int(os.getenv("STORY_CHUNK_INTERVAL", "10"))
-
-ACTIVE_INTERVENTION_WINDOW_SECONDS = int(
-    os.getenv(
-        "ACTIVE_INTERVENTION_WINDOW_SECONDS",
-        ACTIVE_SILENCE_SECONDS,
-    )
-)
-
-PASSIVE_INTERVENTION_WINDOW_SECONDS = int(
-    os.getenv(
-        "PASSIVE_INTERVENTION_WINDOW_SECONDS",
-        PASSIVE_SILENCE_SECONDS,
-    )
-)
+WELCOME_MESSAGE = get_setting_value("WELCOME_MESSAGE", "Welcome everyone! I'm the Moderator.")
+ACTIVE_STORY_STEP = get_setting_value("ACTIVE_STORY_STEP", 1)
+PASSIVE_STORY_STEP = get_setting_value("PASSIVE_STORY_STEP", 1)
+PASSIVE_SILENCE_SECONDS = get_setting_value("PASSIVE_SILENCE_SECONDS", 10)
+ACTIVE_SILENCE_SECONDS = get_setting_value("ACTIVE_SILENCE_SECONDS", 20)
+STORY_CHUNK_INTERVAL = get_setting_value("STORY_CHUNK_INTERVAL", 10)
+ACTIVE_INTERVENTION_WINDOW_SECONDS = get_setting_value("ACTIVE_INTERVENTION_WINDOW_SECONDS", 20)
+PASSIVE_INTERVENTION_WINDOW_SECONDS = get_setting_value("PASSIVE_INTERVENTION_WINDOW_SECONDS", 10)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
