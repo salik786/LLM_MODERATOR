@@ -5,6 +5,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
 export default function AutoJoin() {
   const { mode } = useParams();
   const navigate = useNavigate();
@@ -18,7 +20,7 @@ export default function AutoJoin() {
         setError(null);
 
         // Call backend to get/create room
-        const response = await fetch(`http://localhost:5000/join/${mode}`);
+        const response = await fetch(`${API_URL}/join/${mode}`);
         const data = await response.json();
 
         if (!response.ok) {
