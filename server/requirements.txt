@@ -30,7 +30,7 @@ certifi==2024.8.30
 # === Audio & Speech (TTS/STT Support) ===
 pydub==0.25.1
 ffmpeg-downloader==0.3.0
-pyaudioop==0.3.4  # Required for pydub on Python 3.13+
+pyaudioop  # Required for pydub on Python 3.13+
 
 # === Optional Tools (safe to keep) ===
 anyio==4.11.0
