@@ -95,13 +95,25 @@ except Exception as e:
 # ============================================================
 load_dotenv()
 
+# Get frontend URL first (needed for CORS)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# Allow both localhost (dev) and production frontend
+allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    FRONTEND_URL
+]
+
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=allowed_origins,
     async_mode="threading",
+    logger=True,
+    engineio_logger=True
 )
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -127,8 +139,6 @@ ACTIVE_SILENCE_SECONDS = get_setting_value("ACTIVE_SILENCE_SECONDS", 20)
 STORY_CHUNK_INTERVAL = get_setting_value("STORY_CHUNK_INTERVAL", 10)
 ACTIVE_INTERVENTION_WINDOW_SECONDS = get_setting_value("ACTIVE_INTERVENTION_WINDOW_SECONDS", 20)
 PASSIVE_INTERVENTION_WINDOW_SECONDS = get_setting_value("PASSIVE_INTERVENTION_WINDOW_SECONDS", 10)
-
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 logger.info(f"📝 Config: Active Step={ACTIVE_STORY_STEP}, Passive Step={PASSIVE_STORY_STEP}")
 logger.info(f"📝 Config: Story Interval={STORY_CHUNK_INTERVAL}s")
