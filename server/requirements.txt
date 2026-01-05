@@ -6,7 +6,7 @@ python-dotenv==1.0.1
 eventlet==0.33.3
 Werkzeug==2.3.7
 simple-websocket==1.0.0
-greenlet==2.0.2
+greenlet>=3.0.0
 
 # === Database (Supabase) ===
 supabase>=2.9.0
