@@ -17,7 +17,13 @@ from flask_socketio import SocketIO, join_room, emit
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydub import AudioSegment
+
+# Optional audio support (disabled on Python 3.13+)
+try:
+    from pydub import AudioSegment
+    AUDIO_SUPPORT = True
+except ImportError:
+    AUDIO_SUPPORT = False
 
 # ============================================================
 # Import Supabase Client
@@ -80,15 +86,18 @@ logger.info("="*60)
 # ============================================================
 # FFmpeg Configuration (for TTS/STT)
 # ============================================================
-try:
-    ffmpeg_dir = r"C:\Users\shaima\AppData\Local\ffmpegio\ffmpeg-downloader\ffmpeg\bin"
-    if os.path.exists(ffmpeg_dir):
-        os.environ["PATH"] += os.pathsep + ffmpeg_dir
-        AudioSegment.converter = os.path.join(ffmpeg_dir, "ffmpeg.exe")
-        AudioSegment.ffprobe = os.path.join(ffmpeg_dir, "ffprobe.exe")
-        logger.info("✅ FFmpeg configured")
-except Exception as e:
-    logger.warning(f"⚠️ FFmpeg not configured: {e}")
+if AUDIO_SUPPORT:
+    try:
+        ffmpeg_dir = r"C:\Users\shaima\AppData\Local\ffmpegio\ffmpeg-downloader\ffmpeg\bin"
+        if os.path.exists(ffmpeg_dir):
+            os.environ["PATH"] += os.pathsep + ffmpeg_dir
+            AudioSegment.converter = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+            AudioSegment.ffprobe = os.path.join(ffmpeg_dir, "ffprobe.exe")
+            logger.info("✅ FFmpeg configured")
+    except Exception as e:
+        logger.warning(f"⚠️ FFmpeg not configured: {e}")
+else:
+    logger.warning("⚠️ Audio support disabled (pydub not available)")
 
 # ============================================================
 # App Setup
@@ -760,6 +769,10 @@ def tts():
 def stt():
     """Speech-to-text endpoint"""
     logger.info(f"🎤 STT request")
+
+    if not AUDIO_SUPPORT:
+        logger.warning(f"⚠️ STT not available - pydub not installed")
+        return {"error": "STT not available (audio support disabled)"}, 503
 
     if "file" not in request.files:
         return {"error": "no file"}, 400

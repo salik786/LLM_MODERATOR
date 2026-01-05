@@ -28,9 +28,8 @@ urllib3==2.2.2
 certifi==2024.8.30
 
 # === Audio & Speech (TTS/STT Support) ===
-pydub==0.25.1
-ffmpeg-downloader==0.3.0
-pyaudioop  # Required for pydub on Python 3.13+
+# pydub removed - incompatible with Python 3.13 (audioop module removed)
+# STT endpoint will be disabled
 
 # === Optional Tools (safe to keep) ===
 anyio==4.11.0
