@@ -788,9 +788,10 @@ def stt():
 # Server Start
 # ============================================================
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
     logger.info("="*60)
     logger.info("🚀 Starting Flask-SocketIO server")
-    logger.info(f"📍 Host: 0.0.0.0:5000")
+    logger.info(f"📍 Host: 0.0.0.0:{port}")
     logger.info(f"🌐 Frontend: {FRONTEND_URL}")
     logger.info("="*60)
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)  # debug=False for cleaner logs
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)  # debug=False for cleaner logs

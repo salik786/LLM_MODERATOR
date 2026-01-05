@@ -23,7 +23,7 @@ DEBUG_SOCKET("Initializing socket…");
 // 🟦 FORCE SOCKET TO USE POLLING FIRST, THEN UPGRADE
 // ============================================================
 
-const SERVER_URL = "http://localhost:5000";
+const SERVER_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
 DEBUG_SOCKET("FORCED SERVER_URL =", SERVER_URL);
 
