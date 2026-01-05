@@ -114,6 +114,8 @@ allowed_origins = [
     FRONTEND_URL
 ]
 
+logger.info(f"🔒 CORS allowed origins: {allowed_origins}")
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
 
