@@ -105,7 +105,7 @@ else:
 load_dotenv()
 
 # Get frontend URL first (needed for CORS)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").strip()
 
 # Allow both localhost (dev) and production frontend
 allowed_origins = [
