@@ -6,7 +6,7 @@ python-dotenv==1.0.1
 eventlet==0.33.3
 Werkzeug==2.3.7
 simple-websocket==1.0.0
-greenlet==2.0.2
+greenlet>=3.0.0
 
 # === Database (Supabase) ===
 supabase>=2.9.0
@@ -28,8 +28,8 @@ urllib3==2.2.2
 certifi==2024.8.30
 
 # === Audio & Speech (TTS/STT Support) ===
-pydub==0.25.1
-ffmpeg-downloader==0.3.0
+# pydub removed - incompatible with Python 3.13 (audioop module removed)
+# STT endpoint will be disabled
 
 # === Optional Tools (safe to keep) ===
 anyio==4.11.0

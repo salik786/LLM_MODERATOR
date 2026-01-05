@@ -17,7 +17,13 @@ from flask_socketio import SocketIO, join_room, emit
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI
-from pydub import AudioSegment
+
+# Optional audio support (disabled on Python 3.13+)
+try:
+    from pydub import AudioSegment
+    AUDIO_SUPPORT = True
+except ImportError:
+    AUDIO_SUPPORT = False
 
 # ============================================================
 # Import Supabase Client
@@ -80,15 +86,18 @@ logger.info("="*60)
 # ============================================================
 # FFmpeg Configuration (for TTS/STT)
 # ============================================================
-try:
-    ffmpeg_dir = r"C:\Users\shaima\AppData\Local\ffmpegio\ffmpeg-downloader\ffmpeg\bin"
-    if os.path.exists(ffmpeg_dir):
-        os.environ["PATH"] += os.pathsep + ffmpeg_dir
-        AudioSegment.converter = os.path.join(ffmpeg_dir, "ffmpeg.exe")
-        AudioSegment.ffprobe = os.path.join(ffmpeg_dir, "ffprobe.exe")
-        logger.info("✅ FFmpeg configured")
-except Exception as e:
-    logger.warning(f"⚠️ FFmpeg not configured: {e}")
+if AUDIO_SUPPORT:
+    try:
+        ffmpeg_dir = r"C:\Users\shaima\AppData\Local\ffmpegio\ffmpeg-downloader\ffmpeg\bin"
+        if os.path.exists(ffmpeg_dir):
+            os.environ["PATH"] += os.pathsep + ffmpeg_dir
+            AudioSegment.converter = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+            AudioSegment.ffprobe = os.path.join(ffmpeg_dir, "ffprobe.exe")
+            logger.info("✅ FFmpeg configured")
+    except Exception as e:
+        logger.warning(f"⚠️ FFmpeg not configured: {e}")
+else:
+    logger.warning("⚠️ Audio support disabled (pydub not available)")
 
 # ============================================================
 # App Setup
@@ -96,7 +105,7 @@ except Exception as e:
 load_dotenv()
 
 # Get frontend URL first (needed for CORS)
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").strip()
 
 # Allow both localhost (dev) and production frontend
 allowed_origins = [
@@ -104,6 +113,8 @@ allowed_origins = [
     "http://127.0.0.1:3000",
     FRONTEND_URL
 ]
+
+logger.info(f"🔒 CORS allowed origins: {allowed_origins}")
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": allowed_origins}}, supports_credentials=True)
@@ -761,6 +772,10 @@ def stt():
     """Speech-to-text endpoint"""
     logger.info(f"🎤 STT request")
 
+    if not AUDIO_SUPPORT:
+        logger.warning(f"⚠️ STT not available - pydub not installed")
+        return {"error": "STT not available (audio support disabled)"}, 503
+
     if "file" not in request.files:
         return {"error": "no file"}, 400
 
@@ -804,4 +819,4 @@ if __name__ == "__main__":
     logger.info(f"📍 Host: 0.0.0.0:{port}")
     logger.info(f"🌐 Frontend: {FRONTEND_URL}")
     logger.info("="*60)
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)  # debug=False for cleaner logs
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
