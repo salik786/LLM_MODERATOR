@@ -817,4 +817,4 @@ if __name__ == "__main__":
     logger.info(f"📍 Host: 0.0.0.0:{port}")
     logger.info(f"🌐 Frontend: {FRONTEND_URL}")
     logger.info("="*60)
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)  # debug=False for cleaner logs
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
